@@ -1,0 +1,1221 @@
+---
+title: "Plasmid OE with STING Inhibition"
+subtitle: "Figure 6: MRT67307 and BX765 enhance plasmid trasfection in VSMC"
+author: "Shuai Yuan"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    number_sections: true
+---
+
+```{r setup, echo = FALSE}
+options(
+  htmltools.dir.version = FALSE, 
+  knitr.duplicate.label = "allow", 
+  ggpattern_res = 1200
+  )
+knitr::opts_chunk$set(
+  dpi = 300, 
+  out.width = "100%",
+  cache = FALSE,
+  echo = FALSE,
+  message = FALSE, 
+  warning = FALSE,
+  hiline = TRUE
+  )
+
+root_dir <- "../Data/WB"
+```
+
+```{r pkgs}
+library(lmerTest)
+library(emmeans)
+
+library(openxlsx)
+library(tidyverse)
+library(magrittr)
+library(extrafont)
+library(glue)
+library(ggpattern)
+library(ggupset)
+library(patchwork)
+# library(ggtext)
+
+# Define ggplot theme
+
+fontSize <- 10
+lineWidth <- 0.4 # also used in setting geom with linewidth. 
+
+theme_yuan_wb <- function(baseFontSize = fontSize, baseLineWidth = lineWidth) {
+  font <- "serif"
+  
+  theme_classic() %+replace%
+    
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      plot.background = element_blank(), 
+      plot.margin = margin(0, 0, 0, 0), 
+      
+      axis.line = element_blank(),
+      axis.ticks = element_blank(),
+
+      text = element_text(size = baseFontSize), 
+      line = element_line(linewidth = baseLineWidth), 
+      
+      axis.text.x = element_text(angle = 45, hjust = 0),
+      legend.position = 'none',
+      # aspect.ratio = 0.25,
+      
+      title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      legend.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      legend.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      strip.background = element_blank(),
+      strip.placement = "outside", 
+      strip.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      )
+    )
+}
+
+theme_yuan <- function(baseFontSize = fontSize, baseLineWidth = lineWidth) {
+  font <- "sans"
+  
+  theme_classic() %+replace%
+    
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(2, 0, 2, 0), 
+      
+      text = element_text(size = baseFontSize), 
+      line = element_line(linewidth = baseLineWidth), 
+
+      # axis.line = element_line(color = "black", linewidth = baseLineWidth),
+      # axis.ticks = element_line(color = "black", linewidth = baseLineWidth),
+      axis.ticks.length = unit(baseLineWidth * 2, "mm"),
+      
+      
+      axis.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      legend.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      legend.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      strip.placement = "outside", 
+      strip.background = element_blank(),
+      strip.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      )
+    )
+}
+
+cropBlot <- function(target, imgPath, x, y, width, height, ...) {
+  library(magick)
+  
+  format <- "tif"
+  
+  img <- image_read(imgPath)
+  imgInfo <- image_info(img)
+  imgWidth <- imgInfo$width
+  imgHeight <- imgInfo$height
+  
+  cropWidth <- imgWidth * width
+  cropHeight <- imgHeight * height
+  
+  xOff <- x * imgWidth
+  yOff <- y * imgHeight
+  
+  imgCropped <-
+    image_crop(img, glue("{cropWidth}x{cropHeight}+{xOff}+{yOff}>"))
+  
+  # ggpattern calls gridpattern:::img_read. The function requires image to have 4 channels. 
+  # When magick::image::write is called to write PNG, optimization collapses RGB to grayscale as the blot has only grayscale information. 
+  # This behavior doesn't seem to be overridden in R. 
+  
+  imgCropped <- image_convert(imgCropped, format = format, type = "truecolor", colorspace = "sRGB")
+  
+  imgSavePath <-
+    gsub(paste0(".", tools::file_ext(imgPath)), paste0("_", target), imgPath)
+  
+  image_write(imgCropped, paste0(imgSavePath, ".", format), format = format)
+  return(paste0(imgSavePath, ".", format))
+}
+
+pltSpacer <- plot_spacer() + theme(plot.margin = margin(0, 0, 0, 0))
+
+# stdError <- function(x) sd(x)/sqrt(length(x))
+
+getStatAnnotTbl <- function(dfData, dfStat){
+  Ypad <-  (fontSize/ggplot2::.pt+2) * max(dfData$Value) * 0.025
+
+  dfStat <- dfStat %>%
+    arrange(Group1, Group2) %>%
+    mutate(
+      Ypad = Ypad, 
+      Ymin1 = map_dbl(Group1, function(x) {
+        dfData %>% filter(Group == x) %>% pull(Value) %>% max()
+        }), 
+      Ymin2 = map_dbl(Group2, function(x) {
+        dfData %>% filter(Group == x) %>% pull(Value) %>% max()
+        }),
+      Ymax = map2_dbl(Group1, Group2, function(x, y){
+        dfData %>% filter(Group >= x & Group <= y) %>% pull(Value) %>% max()
+        })
+      ) %>%
+    rowwise() %>%
+    mutate(
+      Ymin1 = Ymin1 + Ypad / 2, 
+      Ymin2 = Ymin2 + Ypad / 2, 
+      X = sum(which(levels(dfData$Group) %in% c(Group1, Group2)))/2
+    )
+
+  if (nrow(dfStat) > 1) {
+    for (i in 2:nrow(dfStat)){
+      for (j in 1:(i-1)){
+        if (dfStat$Ymax[i] <= dfStat$Ymax[j] + Ypad){
+          if ((dfStat$Group2[j] > dfStat$Group1[i] | dfStat$Group2[j] > dfStat$Group1[i])) {
+            dfStat[i, "Ymax"] <- dfStat$Ymax[i-1] + Ypad
+          }
+        }
+      }
+    }    
+  }
+  
+  dfStat <- dfStat %>%
+    mutate(
+      YmaxAdj = Ymax + Ypad,
+      XAdj = X
+    )
+  
+  for (i in 1:nrow(dfStat)){
+      dfStat[i, "XAdj"] <- dfStat$XAdj[i]
+    if (floor(dfStat$XAdj[i]) == dfStat$XAdj[i]) {
+      if (levels(dfData$Group)[as.integer(dfStat$XAdj[i])] %in% c(dfStat$Group1, dfStat$Group2)){
+        dfStat[i, "XAdj"] <-  dfStat$XAdj[i]-1/length(levels(dfData$Group))
+      }
+    }
+  }
+  
+  return(dfStat)
+}
+```
+
+# **Panel A: MRT67307 on HASMC**
+
+Letter paper size: 8.5 in * 11 in
+Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
+Text within figures: 8-12 pt. 
+
+## Representative blot
+
+```{r fig.height=1, fig.width=3.75}
+blnForget <- memoise::forget(gridpattern:::img_read_memoised)
+
+row_margin <- 0.15
+
+dfBlot <- data.frame(
+  target = c("CYB5R4", "GFP", "aTubulin")
+) %>%
+  mutate(
+    target = factor(target, levels = target), 
+    imgPath = c(
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230602_aTub.tif")),
+    x = c(0.07, 0.07, 0.05), 
+    y = c(0.32, 0.63, 0.76), 
+    width = c(0.9, 0.9, 0.9), 
+    height = c(0.15, 0.1, 0.15), 
+    lane = 12
+  )
+
+vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 2, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "")
+vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
+
+imgCropped <- pmap_chr(dfBlot, cropBlot)
+dfBlot$cropped <- imgCropped
+names(imgCropped) <- dfBlot$target
+
+
+pltBlot <- dfBlot %>%
+  ggplot(aes(x = lane, y = target)) + 
+  geom_col_pattern(
+    aes(pattern_filename = target), 
+    pattern = "image",
+    pattern_type = "squish",
+    color = "black",
+    linewidth = lineWidth, 
+    pattern_scale = 1
+  ) +
+  scale_pattern_filename_manual(values = imgCropped) +
+  labs(x = NULL, y = NULL) +
+  scale_x_continuous(position = "top", limits = c(0, length(vtSample)), breaks = c(1:length(vtSample) - 0.5), labels = vtSample, expand = c(0, 0)) +
+  scale_y_discrete(limits=rev) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltMw <- data.frame(
+  target = factor(dfBlot$target, levels = dfBlot$target), 
+  kDa = c(55, 27, 51)
+) %>%
+  ggplot(aes(x = 0, y = target, label = kDa)) +
+  geom_text(size = ggplot2::.pt) +
+  labs(x = "kDa", y = NULL) +
+  scale_x_discrete(position = "top") +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank()
+  )
+
+pltTbl <- data.frame(
+  sample = factor(vtSample, levels = vtSample), 
+  "pCIGX-CYB5R4 (ug)" = c("0", rep("0.4", times = 11)), 
+  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", ""), 
+  check.names = FALSE
+) %>%
+  pivot_longer(cols = names(.)[2:3], names_to = "treatment") %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(size = ggplot2::.pt, angle = 45) +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltBlotHASMCDoseMRT <- pltBlot + pltMw + plot_layout(widths = c(9, 0.5))
+
+show(pltBlotHASMCDoseMRT)
+```
+
+## Quantification
+
+```{r, fig.height=2.5, fig.width=3.75}
+file.list <- list.files(root_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+file.list <- file.list[grepl("0-20uM|dilution", file.list)]
+file.list <- file.list[grepl("HASMC", file.list)]
+
+dfData <- map_dfr(file.list, read.xlsx) %>%
+  filter(Inhibitor.Name == "MRT67307") %>%
+  arrange(Date) %>%
+  mutate(
+    Target = fct_inorder(Target), 
+    Inhibitor.uM = formatC(Inhibitor.uM, digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "") %>% as.character(Inhibitor.uM), 
+    Inhibitor.uM = fct_inorder(Inhibitor.uM), 
+    Group = paste(Inhibitor.uM, Plasmid), 
+    Group = fct_inorder(Group) %>% ordered()
+    ) %>%
+  arrange(Date, Target, Lane) %>%
+  group_by(Date, Inhibitor.Name) %>%
+  mutate(
+    Signal.Norm = Signal / Signal[Target == "a-Tubulin"]
+  ) %>%
+  group_by(Date, Target) %>%
+  mutate(
+    Value = Signal.Norm / Signal.Norm[Lane == 2]
+  )
+
+dfStat <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    model = map(data, function(x) aov(Value ~ Group, data = x)),
+    Anova.pvalue = map_dbl(model, function(x) summary(x)[[1]]$`Pr(>F)`[1])
+    # model = map(data, function(x) lmer(Value ~ Group + (1|Date), data = x)), 
+    # Anova.pvalue = map_dbl(model, function(x) anova(x)$`Pr(>F)`[1])
+  ) %>%
+  filter(Anova.pvalue < 0.05) %>%
+  mutate(
+    post.hoc = map2(data, model, function(x, y){
+      emm <- emmeans(y, ~ Group)
+      dfPostHoc <- contrast(emm, "pairwise", adjust = "tukey") %>%
+        as.data.frame() %>%
+        rename(c("Contrast" = "contrast")) %>%
+        # The groups need to be in the levels of dfData$Group.
+        # Group1 and Group2 are two factors sharing the same order as dfData$Group. 
+        mutate(
+          Contrast = as.character(Contrast) %>%
+            str_replace_all(c("^\\(" = "", "\\)$" = "", "\\) - \\(" = "SPLIT", " - \\(" = "SPLIT", "\\) - " = "SPLIT")), 
+          Group1 = map_vec(Contrast, function(x) {
+            str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              min()
+            }),
+          Group2 = map_vec(Contrast, function(x) {
+            vt <- str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              max()
+            }),
+          Contrast = str_replace_all(Contrast, c("SPLIT" = " vs "))
+          ) %>% 
+        # Post-hoc table should be cleaned up before coordinates are calculated. 
+        filter(p.value < 0.05 & ("0 pCIGX-hCYB5R4" == Group1 | "0 pCIGX-hCYB5R4" == Group2))
+
+      if (nrow(dfPostHoc) == 0) return()
+
+      getStatAnnotTbl(x, dfPostHoc)
+    })
+  ) %>%
+  unnest(cols = c("post.hoc")) %>%
+  ungroup()
+
+lstPltBar <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- ggplot(df, aes(x = Group, y = Value)) +
+        stat_summary(aes(fill = Group), geom = "col", fun.data = "mean_se", color = "black", linewidth = lineWidth) +
+        stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, linewidth = lineWidth) +
+        scale_fill_brewer(palette = "Set3") +
+        annotation_custom(grob = grid::textGrob(label = glue("{unique(Target)}\n(Fold Change)"), rot = 90,  gp = grid::gpar(fontsize = 8, fontface = "bold"), x = -11, default.units = "mm")) + 
+        geom_point(size = 1) + 
+        guides(fill = FALSE) +
+        coord_cartesian(clip = "off") +
+        theme_yuan() +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title = element_blank(), 
+          plot.margin = margin(1, 0, 1, 11, unit = "mm")
+        )
+      
+      if (nrow(dfStat) > 0) {
+        p <- p  +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = YmaxAdj, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = Ymin1, xend = Group1, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group2, y = Ymin2, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_text(data = dfStat[dfStat$Target == unique(Target), ], aes(x = XAdj, y = YmaxAdj + Ypad * 0.1, label = ifelse(p.value < 0.05, "*", "")), size = fontSize/ggplot2::.pt+2)
+      }
+      
+      p <- p + pltSpacer + plot_layout(widths = c(9, 0.5))
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltBarHASMCDoseMRT <- wrap_plots(lstPltBar, nrow = 2)
+
+pltBarHASMCDoseMRT
+```
+
+## Legend
+
+```{r fig.height=0.8, fig.width=3.75}
+pltTbl <- data.frame(
+  sample = vtSample, 
+  "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
+  "MRT67307 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", ""), 
+  check.names = FALSE
+) %>%
+  mutate(sample = factor(vtSample, levels = vtSample)) %>%
+  pivot_longer(cols = names(.)[2:3], names_to = "treatment") %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(size = ggplot2::.pt, angle = 45, hjust = 1) +
+  # geom_hline(yintercept = 1.5, linewidth = 0.2, color = "gray") +
+  # geom_vline(xintercept = c(1:11) + 0.5, linewidth = 0.2, color = "gray") +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = 10) +
+  theme(
+    axis.text.x = element_blank()
+    # panel.border = element_rect(fill = NA, color = "gray")
+  )
+
+pltTblHASMCDoseMRT <- (pltTbl + pltSpacer) + plot_layout(widths = c(9, 0.5))
+
+show(pltTblHASMCDoseMRT)
+```
+
+## Panel A Assembly
+
+```{r fig.height=3.3, fig.width=3.75}
+pltA <- (pltBlotHASMCDoseMRT / pltBarHASMCDoseMRT / pltTblHASMCDoseMRT) + plot_layout(height = c(1, 2.5, 0.8), ncol = 1)
+
+show(pltA)
+```
+
+# **Panel B: BX765 on HASMC**
+
+Letter paper size: 8.5 in * 11 in
+Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
+Text within figures: 8-12 pt. 
+
+## Representative blot
+
+```{r fig.height=1, fig.width=3.75}
+blnForget <- memoise::forget(gridpattern:::img_read_memoised)
+
+row_margin <- 0.15
+
+dfBlot <- data.frame(
+  target = c("CYB5R4", "GFP", "aTubulin")
+) %>%
+  mutate(
+    target = factor(target, levels = target), 
+    imgPath = c(
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_aTub.tif")),
+    x = c(0.1, 0.1, 0.125), 
+    y = c(0.305, 0.61, 0.75), 
+    width = c(0.83, 0.83, 0.835), 
+    height = c(0.15, 0.1, 0.15), 
+    lane = 12
+  )
+
+vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 2, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "")
+vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
+
+imgCropped <- pmap_chr(dfBlot, cropBlot)
+dfBlot$cropped <- imgCropped
+names(imgCropped) <- dfBlot$target
+
+
+pltBlot <- dfBlot %>%
+  ggplot(aes(x = lane, y = target)) + 
+  geom_col_pattern(
+    aes(pattern_filename = target), 
+    pattern = "image",
+    pattern_type = "squish",
+    color = "black",
+    linewidth = lineWidth, 
+    pattern_scale = 1
+  ) +
+  scale_pattern_filename_manual(values = imgCropped) +
+  labs(x = NULL, y = NULL) +
+  scale_x_continuous(position = "top", limits = c(0, length(vtSample)), breaks = c(1:length(vtSample) - 0.5), labels = vtSample, expand = c(0, 0)) +
+  scale_y_discrete(limits=rev) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltMw <- data.frame(
+  target = factor(dfBlot$target, levels = dfBlot$target), 
+  kDa = c(55, 27, 51)
+) %>%
+  ggplot(aes(x = 0, y = target, label = kDa)) +
+  geom_text(size = ggplot2::.pt) +
+  labs(x = "kDa", y = NULL) +
+  scale_x_discrete(position = "top") +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank()
+  )
+
+pltBlotHASMCDoseBX <- pltBlot + pltMw + plot_layout(widths = c(9, 0.5))
+
+show(pltBlotHASMCDoseBX)
+```
+
+## Quantification
+
+```{r, fig.height=2.5, fig.width=3.75}
+file.list <- list.files(root_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+file.list <- file.list[grepl("0-20uM|dilution", file.list)]
+file.list <- file.list[grepl("HASMC", file.list)]
+
+dfData <- map_dfr(file.list, read.xlsx) %>%
+  filter(Inhibitor.Name == "BX765") %>%
+  arrange(Date) %>%
+  mutate(
+    Target = fct_inorder(Target), 
+    Inhibitor.uM = formatC(Inhibitor.uM, digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "") %>% as.character(Inhibitor.uM), 
+    Inhibitor.uM = fct_inorder(Inhibitor.uM), 
+    Group = paste(Inhibitor.uM, Plasmid), 
+    Group = fct_inorder(Group) %>% ordered()
+    ) %>%
+  arrange(Date, Target, Lane) %>%
+  group_by(Date, Inhibitor.Name) %>%
+  mutate(
+    Signal.Norm = Signal / Signal[Target == "a-Tubulin"]
+  ) %>%
+  group_by(Date, Target) %>%
+  mutate(
+    Value = Signal.Norm / Signal.Norm[Lane == 2]
+  )
+
+dfStat <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    model = map(data, function(x) aov(Value ~ Group, data = x)),
+    Anova.pvalue = map_dbl(model, function(x) summary(x)[[1]]$`Pr(>F)`[1])
+    # model = map(data, function(x) lmer(Value ~ Group + (1|Date), data = x)), 
+    # Anova.pvalue = map_dbl(model, function(x) anova(x)$`Pr(>F)`[1])
+  ) %>%
+  filter(Anova.pvalue < 0.05) %>%
+  mutate(
+    post.hoc = map2(data, model, function(x, y){
+      emm <- emmeans(y, ~ Group)
+      dfPostHoc <- contrast(emm, "pairwise", adjust = "tukey") %>%
+        as.data.frame() %>%
+        rename(c("Contrast" = "contrast")) %>%
+        # The groups need to be in the levels of dfData$Group.
+        # Group1 and Group2 are two factors sharing the same order as dfData$Group. 
+        mutate(
+          Contrast = as.character(Contrast) %>%
+            str_replace_all(c("^\\(" = "", "\\)$" = "", "\\) - \\(" = "SPLIT", " - \\(" = "SPLIT", "\\) - " = "SPLIT")), 
+          Group1 = map_vec(Contrast, function(x) {
+            str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              min()
+            }),
+          Group2 = map_vec(Contrast, function(x) {
+            vt <- str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              max()
+            }),
+          Contrast = str_replace_all(Contrast, c("SPLIT" = " vs "))
+          ) %>% 
+        # Post-hoc table should be cleaned up before coordinates are calculated. 
+        filter(p.value < 0.05 & ("0 pCIGX-hCYB5R4" == Group1 | "0 pCIGX-hCYB5R4" == Group2))
+
+      if (nrow(dfPostHoc) == 0) return()
+
+      getStatAnnotTbl(x, dfPostHoc)
+    })
+  ) %>%
+  unnest(cols = c("post.hoc")) %>%
+  ungroup()
+
+lstPltBar <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- ggplot(df, aes(x = Group, y = Value)) +
+        stat_summary(aes(fill = Group), geom = "col", fun.data = "mean_se", color = "black", linewidth = lineWidth) +
+        stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, linewidth = lineWidth) +
+        scale_fill_brewer(palette = "Set3") +
+        annotation_custom(grob = grid::textGrob(label = glue("{unique(Target)}\n(Fold Change)"), rot = 90,  gp = grid::gpar(fontsize = 8, fontface = "bold"), x = -11, default.units = "mm")) + 
+        geom_point(size = 1) + 
+        guides(fill = FALSE) +
+        coord_cartesian(clip = "off") +
+        theme_yuan() +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title = element_blank(), 
+          plot.margin = margin(1, 0, 1, 11, unit = "mm")
+        )
+      
+      if (nrow(dfStat) > 0) {
+        p <- p  +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = YmaxAdj, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = Ymin1, xend = Group1, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group2, y = Ymin2, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_text(data = dfStat[dfStat$Target == unique(Target), ], aes(x = XAdj, y = YmaxAdj + Ypad * 0.1, label = ifelse(p.value < 0.05, "*", "")), size = fontSize/ggplot2::.pt+2)
+      }
+      
+      p <- p + pltSpacer + plot_layout(widths = c(9, 0.5))
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltBarHASMCDoseBX <- wrap_plots(lstPltBar, nrow = 2)
+
+pltBarHASMCDoseBX
+```
+
+## Legend
+
+```{r fig.height=0.8, fig.width=3.75}
+pltTbl <- data.frame(
+  sample = vtSample, 
+  "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
+  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", ""), 
+  check.names = FALSE
+) %>%
+  mutate(sample = factor(vtSample, levels = vtSample)) %>%
+  pivot_longer(cols = names(.)[2:3], names_to = "treatment") %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(size = ggplot2::.pt, angle = 45, hjust = 1) +
+  # geom_hline(yintercept = 1.5, linewidth = 0.2, color = "gray") +
+  # geom_vline(xintercept = c(1:11) + 0.5, linewidth = 0.2, color = "gray") +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = 10) +
+  theme(
+    axis.text.x = element_blank()
+    # panel.border = element_rect(fill = NA, color = "gray")
+  )
+
+pltTblHASMCDoseBX <- (pltTbl + pltSpacer) + plot_layout(widths = c(9, 0.5))
+
+show(pltTblHASMCDoseBX)
+```
+
+## Panel B Assembly
+
+```{r fig.height=3.3, fig.width=3.75}
+pltB <- (pltBlotHASMCDoseBX / pltBarHASMCDoseBX / pltTblHASMCDoseBX) + plot_layout(height = c(1, 2.5, 0.8), ncol = 1)
+
+show(pltB)
+```
+
+
+# **Panel C: MRT67307 on RASMC**
+
+Letter paper size: 8.5 in * 11 in
+Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
+Text within figures: 8-12 pt. 
+
+## Representative blot
+
+```{r fig.height=1, fig.width=3.75}
+blnForget <- memoise::forget(gridpattern:::img_read_memoised)
+
+row_margin <- 0.15
+
+dfBlot <- data.frame(
+  target = c("CYB5R4", "GFP", "aTubulin")
+) %>%
+  mutate(
+    target = factor(target, levels = target), 
+    imgPath = c(
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_MRT67307_0-20uM/20230529_aTub.tif")),
+    x = c(0.02, 0.02, 0.036), 
+    y = c(0.37, 0.71, 0.82), 
+    width = c(0.92, 0.92, 0.92), 
+    height = c(0.15, 0.1, 0.15), 
+    lane = 12
+  )
+
+vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 2, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "")
+vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
+
+imgCropped <- pmap_chr(dfBlot, cropBlot)
+dfBlot$cropped <- imgCropped
+names(imgCropped) <- dfBlot$target
+
+
+pltBlot <- dfBlot %>%
+  ggplot(aes(x = lane, y = target)) + 
+  geom_col_pattern(
+    aes(pattern_filename = target), 
+    pattern = "image",
+    pattern_type = "squish",
+    color = "black",
+    linewidth = lineWidth, 
+    pattern_scale = 1
+  ) +
+  scale_pattern_filename_manual(values = imgCropped) +
+  labs(x = NULL, y = NULL) +
+  scale_x_continuous(position = "top", limits = c(0, length(vtSample)), breaks = c(1:length(vtSample) - 0.5), labels = vtSample, expand = c(0, 0)) +
+  scale_y_discrete(limits=rev) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltMw <- data.frame(
+  target = factor(dfBlot$target, levels = dfBlot$target), 
+  kDa = c(55, 27, 51)
+) %>%
+  ggplot(aes(x = 0, y = target, label = kDa)) +
+  geom_text(size = ggplot2::.pt) +
+  labs(x = "kDa", y = NULL) +
+  scale_x_discrete(position = "top") +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank()
+  )
+
+pltBlotRASMCDoseMRT <- pltBlot + pltMw + plot_layout(widths = c(9, 0.5))
+
+show(pltBlotRASMCDoseMRT)
+```
+
+## Quantification
+
+```{r, fig.height=2.5, fig.width=3.75}
+file.list <- list.files(root_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+file.list <- file.list[grepl("0-20uM|dilution", file.list)]
+file.list <- file.list[grepl("RASMC", file.list)]
+
+dfData <- map_dfr(file.list, read.xlsx) %>%
+  filter(Inhibitor.Name == "MRT67307") %>%
+  arrange(Date) %>%
+  mutate(
+    Target = fct_inorder(Target), 
+    Inhibitor.uM = formatC(Inhibitor.uM, digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "") %>% as.character(Inhibitor.uM), 
+    Inhibitor.uM = fct_inorder(Inhibitor.uM), 
+    Group = paste(Inhibitor.uM, Plasmid), 
+    Group = fct_inorder(Group) %>% ordered()
+    ) %>%
+  arrange(Date, Target, Lane) %>%
+  group_by(Date, Inhibitor.Name) %>%
+  mutate(
+    Signal.Norm = Signal / Signal[Target == "a-Tubulin"]
+  ) %>%
+  group_by(Date, Target) %>%
+  mutate(
+    Value = Signal.Norm / Signal.Norm[Lane == 2]
+  )
+
+dfStat <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    model = map(data, function(x) aov(Value ~ Group, data = x)),
+    Anova.pvalue = map_dbl(model, function(x) summary(x)[[1]]$`Pr(>F)`[1])
+    # model = map(data, function(x) lmer(Value ~ Group + (1|Date), data = x)), 
+    # Anova.pvalue = map_dbl(model, function(x) anova(x)$`Pr(>F)`[1])
+  ) %>%
+  filter(Anova.pvalue < 0.05) %>%
+  mutate(
+    post.hoc = map2(data, model, function(x, y){
+      emm <- emmeans(y, ~ Group)
+      dfPostHoc <- contrast(emm, "pairwise", adjust = "tukey") %>%
+        as.data.frame() %>%
+        rename(c("Contrast" = "contrast")) %>%
+        # The groups need to be in the levels of dfData$Group.
+        # Group1 and Group2 are two factors sharing the same order as dfData$Group. 
+        mutate(
+          Contrast = as.character(Contrast) %>%
+            str_replace_all(c("^\\(" = "", "\\)$" = "", "\\) - \\(" = "SPLIT", " - \\(" = "SPLIT", "\\) - " = "SPLIT")), 
+          Group1 = map_vec(Contrast, function(x) {
+            str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              min()
+            }),
+          Group2 = map_vec(Contrast, function(x) {
+            vt <- str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              max()
+            }),
+          Contrast = str_replace_all(Contrast, c("SPLIT" = " vs "))
+          ) %>% 
+        # Post-hoc table should be cleaned up before coordinates are calculated. 
+        filter(p.value < 0.05 & ("0 pCIGX-hCYB5R4" == Group1 | "0 pCIGX-hCYB5R4" == Group2))
+
+      if (nrow(dfPostHoc) == 0) return()
+
+      getStatAnnotTbl(x, dfPostHoc)
+    })
+  ) %>%
+  unnest(cols = c("post.hoc")) %>%
+  ungroup()
+
+lstPltBar <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- ggplot(df, aes(x = Group, y = Value)) +
+        stat_summary(aes(fill = Group), geom = "col", fun.data = "mean_se", color = "black", linewidth = lineWidth) +
+        stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, linewidth = lineWidth) +
+        scale_fill_brewer(palette = "Set3") +
+        annotation_custom(grob = grid::textGrob(label = glue("{unique(Target)}\n(Fold Change)"), rot = 90,  gp = grid::gpar(fontsize = 8, fontface = "bold"), x = -11, default.units = "mm")) + 
+        geom_point(size = 1) + 
+        guides(fill = FALSE) +
+        coord_cartesian(clip = "off") +
+        theme_yuan() +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title = element_blank(), 
+          plot.margin = margin(1, 0, 1, 11, unit = "mm")
+        )
+      
+      if (nrow(dfStat) > 0) {
+        p <- p  +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = YmaxAdj, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = Ymin1, xend = Group1, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group2, y = Ymin2, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_text(data = dfStat[dfStat$Target == unique(Target), ], aes(x = XAdj, y = YmaxAdj + Ypad * 0.1, label = ifelse(p.value < 0.05, "*", "")), size = fontSize/ggplot2::.pt+2)
+      }
+      
+      p <- p + pltSpacer + plot_layout(widths = c(9, 0.5))
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltBarRASMCDoseMRT <- wrap_plots(lstPltBar, nrow = 2)
+
+pltBarRASMCDoseMRT
+```
+
+## Legend
+
+```{r fig.height=0.8, fig.width=3.75}
+pltTbl <- data.frame(
+  sample = vtSample, 
+  "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
+  "MRT67307 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", ""), 
+  check.names = FALSE
+) %>%
+  mutate(sample = factor(vtSample, levels = vtSample)) %>%
+  pivot_longer(cols = names(.)[2:3], names_to = "treatment") %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(size = ggplot2::.pt, angle = 45, hjust = 1) +
+  # geom_hline(yintercept = 1.5, linewidth = 0.2, color = "gray") +
+  # geom_vline(xintercept = c(1:11) + 0.5, linewidth = 0.2, color = "gray") +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = 10) +
+  theme(
+    axis.text.x = element_blank()
+    # panel.border = element_rect(fill = NA, color = "gray")
+  )
+
+pltTblRASMCDoseMRT <- (pltTbl + pltSpacer) + plot_layout(widths = c(9, 0.5))
+
+show(pltTblRASMCDoseMRT)
+```
+
+## Panel C Assembly
+
+```{r fig.height=3.3, fig.width=3.75}
+pltC <- (pltBlotRASMCDoseMRT / pltBarRASMCDoseMRT / pltTblRASMCDoseMRT) + plot_layout(height = c(1, 2.5, 0.8), ncol = 1)
+
+show(pltC)
+```
+
+# **Panel D: BX765 on RASMC**
+
+Letter paper size: 8.5 in * 11 in
+Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
+Text within figures: 8-12 pt. 
+
+## Representative blot
+
+```{r fig.height=1, fig.width=3.75}
+blnForget <- memoise::forget(gridpattern:::img_read_memoised)
+
+row_margin <- 0.15
+
+dfBlot <- data.frame(
+  target = c("CYB5R4", "GFP", "aTubulin")
+) %>%
+  mutate(
+    target = factor(target, levels = target), 
+    imgPath = c(
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_aTub.tif")),
+    x = c(0.1, 0.1, 0.1), 
+    y = c(0.33, 0.67, 0.75), 
+    width = c(0.85, 0.85, 0.85), 
+    height = c(0.15, 0.1, 0.15), 
+    lane = 12
+  )
+
+vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 2, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "")
+vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
+
+imgCropped <- pmap_chr(dfBlot, cropBlot)
+dfBlot$cropped <- imgCropped
+names(imgCropped) <- dfBlot$target
+
+
+pltBlot <- dfBlot %>%
+  ggplot(aes(x = lane, y = target)) + 
+  geom_col_pattern(
+    aes(pattern_filename = target), 
+    pattern = "image",
+    pattern_type = "squish",
+    color = "black",
+    linewidth = lineWidth, 
+    pattern_scale = 1
+  ) +
+  scale_pattern_filename_manual(values = imgCropped) +
+  labs(x = NULL, y = NULL) +
+  scale_x_continuous(position = "top", limits = c(0, length(vtSample)), breaks = c(1:length(vtSample) - 0.5), labels = vtSample, expand = c(0, 0)) +
+  scale_y_discrete(limits=rev) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltMw <- data.frame(
+  target = factor(dfBlot$target, levels = dfBlot$target), 
+  kDa = c(55, 27, 51)
+) %>%
+  ggplot(aes(x = 0, y = target, label = kDa)) +
+  geom_text(size = ggplot2::.pt) +
+  labs(x = "kDa", y = NULL) +
+  scale_x_discrete(position = "top") +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb() +
+  theme(
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank()
+  )
+
+pltBlotRASMCDoseBX <- pltBlot + pltMw + plot_layout(widths = c(9, 0.5))
+
+show(pltBlotRASMCDoseBX)
+```
+
+## Quantification
+
+```{r, fig.height=2.5, fig.width=3.75}
+file.list <- list.files(root_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+file.list <- file.list[grepl("0-20uM|dilution", file.list)]
+file.list <- file.list[grepl("RASMC", file.list)]
+
+dfData <- map_dfr(file.list, read.xlsx) %>%
+  filter(Inhibitor.Name == "BX765") %>%
+  arrange(Date) %>%
+  mutate(
+    Target = fct_inorder(Target), 
+    Inhibitor.uM = formatC(Inhibitor.uM, digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", "") %>% as.character(Inhibitor.uM), 
+    Inhibitor.uM = fct_inorder(Inhibitor.uM), 
+    Group = paste(Inhibitor.uM, Plasmid), 
+    Group = fct_inorder(Group) %>% ordered()
+    ) %>%
+  arrange(Date, Target, Lane) %>%
+  group_by(Date, Inhibitor.Name) %>%
+  mutate(
+    Signal.Norm = Signal / Signal[Target == "a-Tubulin"]
+  ) %>%
+  group_by(Date, Target) %>%
+  mutate(
+    Value = Signal.Norm / Signal.Norm[Lane == 2]
+  )
+
+vtGroup <- unique(df$Group)
+
+dfStat <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    model = map(data, function(x) aov(Value ~ Group, data = x)),
+    Anova.pvalue = map_dbl(model, function(x) summary(x)[[1]]$`Pr(>F)`[1])
+    # model = map(data, function(x) lmer(Value ~ Group + (1|Date), data = x)), 
+    # Anova.pvalue = map_dbl(model, function(x) anova(x)$`Pr(>F)`[1])
+  ) %>%
+  filter(Anova.pvalue < 0.05) %>%
+  mutate(
+    post.hoc = map2(data, model, function(x, y){
+      emm <- emmeans(y, ~ Group)
+      dfPostHoc <- contrast(emm, "pairwise", adjust = "tukey") %>%
+        as.data.frame() %>%
+        rename(c("Contrast" = "contrast")) %>%
+        # The groups need to be in the levels of dfData$Group.
+        # Group1 and Group2 are two factors sharing the same order as dfData$Group. 
+        mutate(
+          Contrast = as.character(Contrast) %>%
+            str_replace_all(c("^\\(" = "", "\\)$" = "", "\\) - \\(" = "SPLIT", " - \\(" = "SPLIT", "\\) - " = "SPLIT")), 
+          Group1 = map_vec(Contrast, function(x) {
+            str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              min()
+            }),
+          Group2 = map_vec(Contrast, function(x) {
+            vt <- str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              max()
+            }),
+          Contrast = str_replace_all(Contrast, c("SPLIT" = " vs "))
+          ) %>% 
+        # Post-hoc table should be cleaned up before coordinates are calculated. 
+        filter(p.value < 0.05 & ("0 pCIGX-hCYB5R4" == Group1 | "0 pCIGX-hCYB5R4" == Group2))
+
+      if (nrow(dfPostHoc) == 0) return()
+
+      getStatAnnotTbl(x, dfPostHoc)
+    })
+  ) %>%
+  unnest(cols = c("post.hoc")) %>%
+  ungroup()
+
+lstPltBar <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- ggplot(df, aes(x = Group, y = Value)) +
+        stat_summary(aes(fill = Group), geom = "col", fun.data = "mean_se", color = "black", linewidth = lineWidth) +
+        stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, linewidth = lineWidth) +
+        scale_fill_brewer(palette = "Set3") +
+        annotation_custom(grob = grid::textGrob(label = glue("{unique(Target)}\n(Fold Change)"), rot = 90,  gp = grid::gpar(fontsize = 8, fontface = "bold"), x = -11, default.units = "mm")) + 
+        geom_point(size = 1) + 
+        guides(fill = FALSE) +
+        coord_cartesian(clip = "off") +
+        theme_yuan() +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title = element_blank(), 
+          plot.margin = margin(1, 0, 1, 11, unit = "mm")
+        )
+      
+      if (nrow(dfStat) > 0) {
+        p <- p  +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = YmaxAdj, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = Ymin1, xend = Group1, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group2, y = Ymin2, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_text(data = dfStat[dfStat$Target == unique(Target), ], aes(x = XAdj, y = YmaxAdj + Ypad * 0.1, label = ifelse(p.value < 0.05, "*", "")), size = fontSize/ggplot2::.pt+2)
+      }
+      
+      p <- p + pltSpacer + plot_layout(widths = c(9, 0.5))
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltBarRASMCDoseBX <- wrap_plots(lstPltBar, nrow = 2)
+
+pltBarRASMCDoseBX
+```
+
+## Legend
+
+```{r fig.height=0.8, fig.width=3.75}
+pltTbl <- data.frame(
+  sample = vtSample, 
+  "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
+  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  formatC(digits = 1, format = "fg", flag = "#") %>%
+  str_replace("\\.$", ""), 
+  check.names = FALSE
+) %>%
+  mutate(sample = factor(vtSample, levels = vtSample)) %>%
+  pivot_longer(cols = names(.)[2:3], names_to = "treatment") %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(size = ggplot2::.pt, angle = 45, hjust = 1) +
+  # geom_hline(yintercept = 1.5, linewidth = 0.2, color = "gray") +
+  # geom_vline(xintercept = c(1:11) + 0.5, linewidth = 0.2, color = "gray") +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = 10) +
+  theme(
+    axis.text.x = element_blank()
+    # panel.border = element_rect(fill = NA, color = "gray")
+  )
+
+pltTblRASMCDoseBX <- (pltTbl + pltSpacer) + plot_layout(widths = c(9, 0.5))
+
+show(pltTblRASMCDoseBX)
+```
+
+## Panel D Assembly
+
+```{r fig.height=3.3, fig.width=3.75}
+pltD <- (pltBlotRASMCDoseBX / pltBarRASMCDoseBX / pltTblRASMCDoseBX) + plot_layout(height = c(1, 2.5, 0.8), ncol = 1)
+
+show(pltD)
+```
+
+# Figure 6 Assembly
+
+```{r fig.height=6.6, fig.width=7.5}
+(pltA | pltB) / (pltC | pltD) + 
+  plot_annotation(tag_levels = list(c("A", "", "", "", "",
+                                      "B", "", "", "", "",
+                                      "C", "", "", "", "",
+                                      "D", "", "", "", ""))) &
+  theme(plot.tag.position = c(0.01, 0.9))
+
+ggsave("Figure_6_v1.1.pdf", width = 7.5, height = 6.6, dpi = 600)
+```
+

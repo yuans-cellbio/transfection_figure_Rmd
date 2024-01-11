@@ -1,0 +1,564 @@
+---
+title: "Plasmid OE with STING Inhibition"
+subtitle: "Figure 4: MRT67307 effects on transfection are reversible"
+author: "Shuai Yuan"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    number_sections: true
+---
+
+```{r setup, echo = FALSE}
+options(
+  htmltools.dir.version = FALSE, 
+  knitr.duplicate.label = "allow", 
+  ggpattern_res = 1200
+  )
+knitr::opts_chunk$set(
+  dpi = 300, 
+  out.width = "100%",
+  cache = FALSE,
+  echo = FALSE,
+  message = FALSE, 
+  warning = FALSE,
+  hiline = TRUE
+  )
+
+root_dir <- "../Data/WB"
+```
+
+```{r pkgs}
+library(lmerTest)
+library(emmeans)
+
+library(openxlsx)
+library(tidyverse)
+library(magrittr)
+library(extrafont)
+library(glue)
+library(ggpattern)
+library(ggupset)
+library(patchwork)
+# library(ggtext)
+
+# Define ggplot theme
+
+fontSize <- 10
+lineWidth <- 0.4 # also used in setting geom with linewidth. 
+
+theme_yuan_wb <- function(baseFontSize = fontSize, baseLineWidth = lineWidth) {
+  font <- "serif"
+  
+  theme_classic() %+replace%
+    
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      plot.background = element_blank(), 
+      plot.margin = margin(0, 0, 0, 0), 
+      
+      axis.line = element_blank(),
+      axis.ticks = element_blank(),
+
+      text = element_text(size = baseFontSize), 
+      line = element_line(linewidth = baseLineWidth), 
+      
+      axis.text.x = element_text(angle = 45, hjust = 0),
+      legend.position = 'none',
+      # aspect.ratio = 0.25,
+      
+      title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      legend.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      legend.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      strip.background = element_blank(),
+      strip.placement = "outside", 
+      strip.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      )
+    )
+}
+
+theme_yuan <- function(baseFontSize = fontSize, baseLineWidth = lineWidth) {
+  font <- "sans"
+  
+  theme_classic() %+replace%
+    
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(2, 0, 2, 0), 
+      
+      text = element_text(size = baseFontSize), 
+      line = element_line(linewidth = baseLineWidth), 
+
+      # axis.line = element_line(color = "black", linewidth = baseLineWidth),
+      # axis.ticks = element_line(color = "black", linewidth = baseLineWidth),
+      axis.ticks.length = unit(baseLineWidth * 2, "mm"),
+      
+      
+      axis.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      axis.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      legend.title = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      ),
+      
+      legend.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize * 0.8
+      ),
+      
+      strip.placement = "outside", 
+      strip.background = element_blank(),
+      strip.text = element_text(
+        family = font,
+        face = "bold",
+        size = baseFontSize
+      )
+    )
+}
+
+cropBlot <- function(target, imgPath, x, y, width, height, ...) {
+  library(magick)
+  
+  format <- "tif"
+  
+  img <- image_read(imgPath)
+  imgInfo <- image_info(img)
+  imgWidth <- imgInfo$width
+  imgHeight <- imgInfo$height
+  
+  cropWidth <- imgWidth * width
+  cropHeight <- imgHeight * height
+  
+  xOff <- x * imgWidth
+  yOff <- y * imgHeight
+  
+  imgCropped <-
+    image_crop(img, glue("{cropWidth}x{cropHeight}+{xOff}+{yOff}>"))
+  
+  # ggpattern calls gridpattern:::img_read. The function requires image to have 4 channels. 
+  # When magick::image::write is called to write PNG, optimization collapses RGB to grayscale as the blot has only grayscale information. 
+  # This behavior doesn't seem to be overridden in R. 
+  
+  imgCropped <- image_convert(imgCropped, format = format, type = "truecolor", colorspace = "sRGB")
+  
+  imgSavePath <-
+    gsub(paste0(".", tools::file_ext(imgPath)), paste0("_", target), imgPath)
+  
+  image_write(imgCropped, paste0(imgSavePath, ".", format), format = format)
+  return(paste0(imgSavePath, ".", format))
+}
+
+pltSpacer <- plot_spacer() + theme(plot.margin = margin(0, 0, 0, 0))
+
+# stdError <- function(x) sd(x)/sqrt(length(x))
+
+getStatAnnotTbl <- function(dfData, dfStat){
+  Ypad <-  (fontSize/ggplot2::.pt+2) * max(dfData$Value) * 0.025
+
+  dfStat <- dfStat %>%
+    arrange(Group1, Group2) %>%
+    mutate(
+      Ypad = Ypad, 
+      Ymin1 = map_dbl(Group1, function(x) {
+        dfData %>% filter(Group == x) %>% pull(Value) %>% max()
+        }), 
+      Ymin2 = map_dbl(Group2, function(x) {
+        dfData %>% filter(Group == x) %>% pull(Value) %>% max()
+        }),
+      Ymax = map2_dbl(Group1, Group2, function(x, y){
+        dfData %>% filter(Group >= x & Group <= y) %>% pull(Value) %>% max()
+        })
+      ) %>%
+    rowwise() %>%
+    mutate(
+      Ymin1 = Ymin1 + Ypad / 2, 
+      Ymin2 = Ymin2 + Ypad / 2, 
+      X = sum(which(levels(dfData$Group) %in% c(Group1, Group2)))/2
+    )
+
+  if (nrow(dfStat) > 1) {
+    for (i in 2:nrow(dfStat)){
+      for (j in 1:(i-1)){
+        if (dfStat$Ymax[i] <= dfStat$Ymax[j] + Ypad){
+          if ((dfStat$Group2[j] > dfStat$Group1[i] | dfStat$Group2[j] > dfStat$Group1[i])) {
+            dfStat[i, "Ymax"] <- dfStat$Ymax[i-1] + Ypad
+          }
+        }
+      }
+    }    
+  }
+  
+  dfStat <- dfStat %>%
+    mutate(
+      YmaxAdj = Ymax + Ypad,
+      XAdj = X
+    )
+  
+  for (i in 1:nrow(dfStat)){
+      dfStat[i, "XAdj"] <- dfStat$XAdj[i]
+    if (floor(dfStat$XAdj[i]) == dfStat$XAdj[i]) {
+      if (levels(dfData$Group)[as.integer(dfStat$XAdj[i])] %in% c(dfStat$Group1, dfStat$Group2)){
+        dfStat[i, "XAdj"] <-  dfStat$XAdj[i]-1/length(levels(dfData$Group))
+      }
+    }
+  }
+  
+  return(dfStat)
+}
+```
+
+# **Panel A: Representative blots**
+
+Letter paper size: 8.5 in * 11 in
+Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
+Text within figures: 8-12 pt. 
+
+## Representative blot
+
+```{r fig.height=1.3, fig.width=2.8}
+blnForget <- memoise::forget(gridpattern:::img_read_memoised)
+
+row_margin <- 0.15
+
+dfBlot <- data.frame(
+  target = c("eNOS pS1177", "eNOS", "GFP", "aTubulin")
+) %>%
+  mutate(
+    target = factor(target, levels = target), 
+    imgPath = c(
+      glue("{root_dir}/20230630_HAEC_eNOS.OE.WT.S1177A_VEGF_20ng.ml/20230630_eNOS.pS1177.tif"), 
+      glue("{root_dir}/20230630_HAEC_eNOS.OE.WT.S1177A_VEGF_20ng.ml/20230630_eNOS.tif"), 
+      glue("{root_dir}/20230630_HAEC_eNOS.OE.WT.S1177A_VEGF_20ng.ml/20230630_GFP.tif"), 
+      glue("{root_dir}/20230630_HAEC_eNOS.OE.WT.S1177A_VEGF_20ng.ml/20230630_aTub.tif")),
+    x = c(0.15, 0.15, 0.12, 0.14), 
+    y = c(0.05, 0.05, 0.65, 0.4), 
+    width = c(0.83, 0.83, 0.83, 0.83), 
+    height = c(0.1, 0.1, 0.1, 0.1), 
+    lane = 6, 
+    col_width = height / min(height) - row_margin
+  )
+
+for (idx in 1:nrow(dfBlot)){
+  if (idx == 1) {
+    dfBlot[idx, "col_x"] <- 1
+  } else {
+    dfBlot[idx, "col_x"] <- dfBlot[idx-1, "col_x"] +sum(dfBlot[(idx-1):idx, "col_width"]) / 2 + row_margin
+  }
+}
+
+vtSample <- c(1:6)
+
+imgCropped <- pmap_chr(dfBlot, cropBlot)
+dfBlot$cropped <- imgCropped
+names(imgCropped) <- dfBlot$target
+
+pltBlot <- dfBlot %>%
+  ggplot(aes(x = col_x, y = lane, width = col_width)) + 
+  geom_col_pattern(
+    aes(pattern_filename = target), 
+    pattern = "image",
+    pattern_type = "squish",
+    color = "black",
+    linewidth = lineWidth, 
+    pattern_scale = 1
+  ) +
+  scale_pattern_filename_manual(values = imgCropped) +
+  labs(x = NULL, y = NULL) +
+  scale_y_continuous(position = "left", limits = c(0, length(vtSample)), breaks = c(1:length(vtSample) - 0.5), labels = vtSample, expand = c(0, 0)) +
+  coord_flip(clip = "off") +
+  scale_x_reverse(limits = rev(c(dfBlot[1, "col_x"] - dfBlot[1, "col_width"]/2, dfBlot[nrow(dfBlot), "col_x"] + dfBlot[nrow(dfBlot), "col_width"]/2)), breaks = dfBlot$col_x, labels = dfBlot$target) +
+  theme_yuan_wb(baseFontSize = fontSize) +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+pltBlot
+
+pltMw <- data.frame(col_x = dfBlot$col_x,
+                    kDa = c(133, 133, 27, 51)) %>%
+  ggplot(aes(x = 0, y = col_x, label = kDa)) +
+  geom_text(size = ggplot2::.pt) +
+  labs(x = "kDa", y = NULL) +
+  scale_y_reverse(
+    limits = rev(c(dfBlot[1, "col_x"] - dfBlot[1, "col_width"] / 2, dfBlot[nrow(dfBlot), "col_x"] + dfBlot[nrow(dfBlot), "col_width"] / 2)),
+    breaks = dfBlot$col_x) +
+  scale_x_discrete(position = "top") +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = fontSize) +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank())
+
+pltBlotNos <- (pltBlot + pltMw + plot_layout(widths = c(9, 0.5)))
+
+show(pltBlotNos)
+```
+
+## Panel A: Quantification
+
+```{r, fig.height=3.2, fig.width=2.8}
+file.list <- list.files(root_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+file.list <- file.list[grepl("eNOS", file.list)]
+
+dfData <- map_dfr(file.list, read.xlsx) %>%
+  filter(Rep == 1) %>%
+  arrange(Date) %>%
+  rename(Minute = "VEGF.20ng/ml.(minutes)") %>%
+  mutate(
+    Target = fct_inorder(Target), 
+    Plasmid = fct_inorder(Plasmid), 
+    Group = paste(Plasmid, Minute), 
+    Group = fct_inorder(Group) %>% ordered()
+    ) %>%
+  arrange(Date, Rep, Minute, Plasmid, Target, Lane) %>%
+  group_by(Date, Rep) %>%
+  mutate(
+    Signal.Norm = Signal / Signal[Target == "a-Tubulin"]
+  ) %>%
+  group_by(Date, Rep, Target) %>%
+  mutate(
+    Value = Signal.Norm / Signal.Norm[Plasmid == "pCIGX-MCS" & Minute == 0]
+  )
+
+dfStat <- dfData %>%
+  filter(Target != "a-Tubulin") %>%
+  group_by(Rep, Target) %>%
+  nest() %>%
+  mutate(
+    # model = map(data, function(x) aov(Value ~ Group, data = x)),
+    # Anova.pvalue = map_dbl(model, function(x) summary(x)[[1]]$`Pr(>F)`[1])
+    model = map(data, function(x) lmer(Value ~ Group + (1|Date), data = x)),
+    Anova.pvalue = map_dbl(model, function(x) anova(x)$`Pr(>F)`[1])
+  ) %>%
+  filter(Anova.pvalue < 0.05) %>%
+  mutate(
+    post.hoc = map2(data, model, function(x, y){
+      emm <- emmeans(y, ~ Group)
+      dfPostHoc <- contrast(emm, "pairwise", adjust = "tukey") %>%
+        as.data.frame() %>%
+        rename(c("Contrast" = "contrast")) %>%
+        # The groups need to be in the levels of dfData$Group.
+        # Group1 and Group2 are two factors sharing the same order as dfData$Group. 
+        mutate(
+          Contrast = as.character(Contrast) %>%
+            str_replace_all(c("^\\(" = "", "\\)$" = "", "\\) - \\(" = "SPLIT", " - \\(" = "SPLIT", "\\) - " = "SPLIT", " - " = "SPLIT")), 
+          Group1 = map_vec(Contrast, function(x) {
+            str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              min()
+            }),
+          Group2 = map_vec(Contrast, function(x) {
+            vt <- str_split_1(x, "SPLIT") %>% 
+              ordered(levels = levels(dfData$Group)) %>%
+              max()
+            }),
+          Contrast = str_replace_all(Contrast, c("SPLIT" = " vs "))
+          ) %>%
+        # Post-hoc table should be cleaned up before coordinates are calculated. 
+        filter(p.value < 0.05) %>% 
+        mutate(
+          Group1.Plasmid = map_chr(Group1, function(x) strsplit(as.character(x), " ") %>% unlist() %>% first()), 
+          Group1.Minute = map_chr(Group1, function(x) strsplit(as.character(x), " ") %>% unlist() %>% last()), 
+          Group2.Plasmid = map_chr(Group2, function(x) strsplit(as.character(x), " ") %>% unlist() %>% first()), 
+          Group2.Minute = map_chr(Group2, function(x) strsplit(as.character(x), " ") %>% unlist() %>% last())
+          ) %>%
+      filter(
+        Group1.Minute == Group2.Minute |
+          Group1.Plasmid == Group2.Plasmid
+      )
+
+      if (nrow(dfPostHoc) == 0) return()
+
+      getStatAnnotTbl(x, dfPostHoc)
+    })
+  ) %>%
+  unnest(cols = c("post.hoc")) %>%
+  ungroup()
+
+lstPltBar <- dfData %>%
+  filter(!Target %in% c("a-Tubulin", "Akt pS473")) %>%
+  group_by(Target) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- ggplot(df, aes(x = Group, y = Value)) +
+        stat_summary(aes(fill = Group), geom = "col", fun.data = "mean_se", color = "black", linewidth = lineWidth) +
+        stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, linewidth = lineWidth) +
+        scale_fill_brewer(palette = "Set3") +
+        annotation_custom(grob = grid::textGrob(label = glue("{unique(Target)}\n(Fold Change)"), rot = 90,  gp = grid::gpar(fontsize = 8, fontface = "bold"), x = -30, default.units = "pt")) + 
+        geom_point(size = 1) +
+        guides(fill = FALSE) +
+        coord_cartesian(clip = "off") +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+        theme_yuan(baseFontSize = 10) +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(), 
+          axis.title = element_blank()
+        )
+      
+      if (nrow(dfStat) > 0) {
+        p <- p  +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = YmaxAdj, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group1, y = Ymin1, xend = Group1, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_segment(data = dfStat[dfStat$Target == unique(Target), ], aes(x = Group2, y = Ymin2, xend = Group2, yend = YmaxAdj), linewidth = lineWidth) +
+          geom_text(data = dfStat[dfStat$Target == unique(Target), ], aes(x = XAdj, y = YmaxAdj + Ypad * 0.1, label = ifelse(p.value < 0.05, "*", "")), size = fontSize/ggplot2::.pt+2)
+      }
+      
+      p <- p + pltSpacer + plot_layout(widths = c(9, 0.5))
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltBarNos <- wrap_plots(lstPltBar, ncol = 1)
+
+pltBarNos
+```
+
+## Legend
+
+```{r fig.height=0.8, fig.width=2.8}
+pltTbl <- data.frame(
+  sample = vtSample, 
+  Plasmid = rep(c("EV", "WT", "S1177A") %>% as.character(), times = 2), 
+  VEGF = rep(c("-", "+"), each = 3), 
+  check.names = FALSE) %>%
+  mutate(sample = factor(vtSample, levels = vtSample)) %>%
+  pivot_longer(cols = names(.)[2:ncol(.)], names_to = "treatment") %>%
+  mutate(ang = rep(c(45, 0), times = 6)) %>%
+  ggplot(aes(x = sample, y = treatment, label = value)) +
+  geom_text(aes(angle = ang), size = ggplot2::.pt) +
+  labs(y = NULL, x = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_yuan_wb(baseFontSize = fontSize) +
+  theme(
+    axis.text.x = element_blank(),
+    plot.margin = margin(0, 0, 0, 0)
+    # panel.border = element_rect(fill = NA, color = "black")
+  )
+
+pltTblNos <- (pltTbl + pltSpacer) + plot_layout(widths = c(9, 0.5))
+
+show(pltTblNos)
+```
+
+# Panel A Assembly
+
+```{r fig.height=4.6, fig.width=2.8}
+# pltA <- (pltBlotNos/ pltBarNos / pltTblNos +
+#           plot_layout(heights = c(1.3, 3.2, 0.8)) +
+#           plot_annotation(tag_levels = list(c("A", "", "", "", "", "")))) &
+#           theme(
+#             plot.background = element_blank(), 
+#             plot.tag = element_text(face = "bold")
+#             )
+
+pltA <- (pltBlotNos/ pltBarNos / pltTblNos +
+          plot_layout(heights = c(1.3, 3.2, 0.8)))
+
+pltA
+# ggsave("Figure_4.pdf", width = 3.75, height = 4.6, dpi = 600)
+```
+
+```{r}
+library(magick)
+library(tidyverse)
+library(ggtext)
+
+dfImg <- data.frame(
+  title = c("EV", "WT", "S1177A"), 
+  path = c("../Data/ICC/MAX_20230705_EV.OE.VEGF_DAPI_488-GFP_594-eNOS.pS1177_647-eNOS_40X_1.tif_Montage.tif", 
+           "../Data/ICC/MAX_20230705_eNOS.WT.OE.VEGF_DAPI_488-GFP_594-eNOS.pS1177_647-eNOS_40X_2.tif_Montage.tif", 
+           "../Data/ICC/MAX_20230705_eNOS.S1177A.OE.VEGF_DAPI_488-GFP_594-eNOS.pS1177_647-eNOS_40X_1.tif_Montage.tif")
+)
+
+dfLabs <- data.frame(x = c(10, 1040, 2080), y = rep(1020, 3), text = c("<span style='color:blue'>**DAPI**</span><br><span style='color:green'>**GFP**</span>", "<span style='color:blue'>**DAPI**</span><br><span style='color:red'>**eNOS pS1177**</span>", "<span style='color:blue'>**DAPI**</span><br><span style='color:white'>**eNOS**</span>"))
+
+lstPltIcc <- dfImg %>%
+  group_by(title) %>%
+  nest() %>%
+  mutate(
+    plt = map(data, function(df){
+      p <- image_ggplot(image_read(df$path)) +
+        labs(y = title) +
+        theme_yuan(baseFontSize = 10) +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(), 
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(), 
+          axis.title.x = element_blank()
+        )
+      if (title == "EV") p <- p + geom_richtext(data = dfLabs, aes(x = x, y = y, label = text), fill = "black", vjust = 1, hjust = 0, alpha = 0.5, size = ggplot2::.pt)
+      return (p)
+    })
+  ) %>%
+  ungroup %>%
+  select(plt) %>%
+  unlist(recursive = FALSE, use.names = TRUE)
+
+pltB <- wrap_plots(lstPltIcc, ncol = 1)
+
+pltB
+```
+
+# Figure 5 Assembly
+
+```{r fig.height=4.6, fig.width=7.4}
+(((pltA & theme(plot.tag.position = c(0, 0.94))) | pltB & theme(plot.tag.position = c(0.02, 1.08), plot.margin = margin(0, 0, 0, 10))) + plot_layout(widths = c(2.8, 4.6)) +
+  plot_annotation(tag_levels = list(c("A", "", "", "", "", "", "B", "", "")))) &
+  theme(
+    plot.background = element_blank(), 
+    plot.tag = element_text(face = "bold")
+    )
+
+
+ggsave("Figure_5_v1.1.pdf", width = 7.4, height = 4.6, dpi = 600)
+```
