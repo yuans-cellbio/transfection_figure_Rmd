@@ -1,6 +1,6 @@
 ---
 title: "Plasmid OE with STING Inhibition"
-subtitle: "Figure 2: MRT67307 and BX765 do not have additive effects."
+subtitle: "Figure 2: MRT67307 and BX795 do not have additive effects."
 author: "Shuai Yuan"
 date: '`r format(Sys.Date(), "%Y-%m-%d")`'
 output: 
@@ -272,9 +272,9 @@ dfBlot <- data.frame(
   mutate(
     target = factor(target, levels = target), 
     imgPath = c(
-      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX765/20230219_4h_transfection_CYB5R4.tif"), 
-      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX765/20230219_4h_transfection_GFP.tif"), 
-      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX765/20230219_4h_transfection_aTub.tif")),
+      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX795/20230219_4h_transfection_CYB5R4.tif"), 
+      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX795/20230219_4h_transfection_GFP.tif"), 
+      glue("{root_dir}/20230219_HAEC_pCIGX-R4_OE0.2-0.4ug_12well_MRT67307_BX795/20230219_4h_transfection_aTub.tif")),
     x = c(0.125, 0.125, 0.11), 
     y = c(0.38, 0.67, 0.65), 
     width = c(0.81, 0.805, 0.82), 
@@ -291,7 +291,7 @@ for (idx in 1:nrow(dfBlot)){
   }
 }
 
-vtSample <- c("Vehicle", "MRT67307 5uM", "BX765 1uM", "MRT67307 5uM/BX765 1uM", "Vehicle/pCIGX-CYB5R4 0.2ug", "MRT67307 5uM/pCIGX-CYB5R4 0.2ug", "BX765 1uM/pCIGX-CYB5R4 0.2ug", "MRT67307 5uM/BX765 1uM/pCIGX-CYB5R4 0.2ug", "Vehicle/pCIGX-CYB5R4 0.4ug", "MRT67307 5uM/pCIGX-CYB5R4 0.4ug", "BX765 1uM/pCIGX-CYB5R4 0.4ug", "MRT67307 5uM/BX765 1uM/pCIGX-CYB5R4 0.4ug")
+vtSample <- c("Vehicle", "MRT67307 5uM", "BX795 1uM", "MRT67307 5uM/BX795 1uM", "Vehicle/pCIGX-CYB5R4 0.2ug", "MRT67307 5uM/pCIGX-CYB5R4 0.2ug", "BX795 1uM/pCIGX-CYB5R4 0.2ug", "MRT67307 5uM/BX795 1uM/pCIGX-CYB5R4 0.2ug", "Vehicle/pCIGX-CYB5R4 0.4ug", "MRT67307 5uM/pCIGX-CYB5R4 0.4ug", "BX795 1uM/pCIGX-CYB5R4 0.4ug", "MRT67307 5uM/BX795 1uM/pCIGX-CYB5R4 0.4ug")
 
 imgCropped <- pmap_chr(dfBlot, cropBlot)
 dfBlot$cropped <- imgCropped
@@ -335,7 +335,7 @@ pltTbl <- data.frame(
   sample = vtSample, 
   "pCIGX-CYB5R4 (ug)" = rep(c(0, 0.2, 0.4) %>% as.character(), each = 4), 
   "MRT67307 (5uM)" = rep(c("", "X", "", "X"), times = 3), 
-  "BX765 (1uM)" = rep(c("", "", "X", "X"), times = 3), 
+  "BX795 (1uM)" = rep(c("", "", "X", "X"), times = 3), 
   check.names = FALSE) %>%
   mutate(sample = factor(vtSample, levels = vtSample)) %>%
   pivot_longer(cols = names(.)[2:ncol(.)], names_to = "treatment") %>%

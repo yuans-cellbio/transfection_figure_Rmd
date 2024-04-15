@@ -269,9 +269,9 @@ dfBlot <- data.frame(
   mutate(
     target = factor(target, levels = target), 
     imgPath = c(
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_MRT67307_CYB5R4.tif"),
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_MRT67307_GFP.tif"),
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_MRT67307_aTub.tif")),
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_MRT67307_CYB5R4.tif"),
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_MRT67307_GFP.tif"),
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_MRT67307_aTub.tif")),
     x = c(0.07, 0.065, 0.08), 
     y = c(0.38, 0.7, 0.38), 
     width = c(0.87, 0.86, 0.85), 
@@ -483,7 +483,7 @@ show(pltA)
 # ggsave("Figure_1A.pdf", pltA, height = 3.3, width = 3.75)
 ```
 
-# **Panel B: BX765 dose-response**
+# **Panel B: BX795 dose-response**
 
 Letter paper size: 8.5 in * 11 in
 Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
@@ -499,9 +499,9 @@ dfBlot <- data.frame(
   mutate(
     target = factor(target, levels = target), 
     imgPath = c(
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_BX765_CYB5R4.tif"), 
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_BX765_GFP.tif"),
-      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX765_20uM_0.5dilutions/20230215_BX765_aTub.tif")),
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_BX795_CYB5R4.tif"), 
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_BX795_GFP.tif"),
+      glue("{root_dir}/20230215_HAEC_pCIGX-R4_OE0.4ug_12well_MRT67307_BX795_20uM_0.5dilutions/20230215_BX795_aTub.tif")),
     x = c(0.065, 0.065, 0.065), 
     y = c(0.38, 0.67, 0.38), 
     width = c(0.86, 0.85, 0.85), 
@@ -568,7 +568,7 @@ file.list <- file.list[grepl("0-20uM|dilution", file.list)]
 file.list <- file.list[grepl("HAEC", file.list)]
 
 dfData <- map_dfr(file.list, read.xlsx) %>%
-  filter(Inhibitor.Name == "BX765") %>%
+  filter(Inhibitor.Name == "BX795") %>%
   arrange(Date) %>%
   mutate(
     Target = fct_inorder(Target), 
@@ -682,7 +682,7 @@ pltBarBX
 pltTbl <- data.frame(
   sample = vtSample, 
   "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
-  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  "BX795 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 1, format = "fg", flag = "#") %>%
   str_replace("\\.$", ""), 
   check.names = FALSE

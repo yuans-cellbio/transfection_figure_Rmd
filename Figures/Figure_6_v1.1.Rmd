@@ -1,6 +1,6 @@
 ---
 title: "Plasmid OE with STING Inhibition"
-subtitle: "Figure 6: MRT67307 and BX765 enhance plasmid trasfection in VSMC"
+subtitle: "Figure 6: MRT67307 and BX795 enhance plasmid trasfection in VSMC"
 author: "Shuai Yuan"
 date: '`r format(Sys.Date(), "%Y-%m-%d")`'
 output: 
@@ -285,7 +285,7 @@ dfBlot <- data.frame(
 vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 2, format = "fg", flag = "#") %>%
   str_replace("\\.$", "")
-vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste("BX795", vtSample, "uM")
 vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
 
 imgCropped <- pmap_chr(dfBlot, cropBlot)
@@ -331,7 +331,7 @@ pltMw <- data.frame(
 pltTbl <- data.frame(
   sample = factor(vtSample, levels = vtSample), 
   "pCIGX-CYB5R4 (ug)" = c("0", rep("0.4", times = 11)), 
-  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  "BX795 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 1, format = "fg", flag = "#") %>%
   str_replace("\\.$", ""), 
   check.names = FALSE
@@ -504,7 +504,7 @@ pltA <- (pltBlotHASMCDoseMRT / pltBarHASMCDoseMRT / pltTblHASMCDoseMRT) + plot_l
 show(pltA)
 ```
 
-# **Panel B: BX765 on HASMC**
+# **Panel B: BX795 on HASMC**
 
 Letter paper size: 8.5 in * 11 in
 Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
@@ -523,9 +523,9 @@ dfBlot <- data.frame(
   mutate(
     target = factor(target, levels = target), 
     imgPath = c(
-      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_CYB5R4_GFP.tif"), 
-      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_CYB5R4_GFP.tif"), 
-      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230602_aTub.tif")),
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230602_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230602_HASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230602_aTub.tif")),
     x = c(0.1, 0.1, 0.125), 
     y = c(0.305, 0.61, 0.75), 
     width = c(0.83, 0.83, 0.835), 
@@ -536,7 +536,7 @@ dfBlot <- data.frame(
 vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 2, format = "fg", flag = "#") %>%
   str_replace("\\.$", "")
-vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste("BX795", vtSample, "uM")
 vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
 
 imgCropped <- pmap_chr(dfBlot, cropBlot)
@@ -592,7 +592,7 @@ file.list <- file.list[grepl("0-20uM|dilution", file.list)]
 file.list <- file.list[grepl("HASMC", file.list)]
 
 dfData <- map_dfr(file.list, read.xlsx) %>%
-  filter(Inhibitor.Name == "BX765") %>%
+  filter(Inhibitor.Name == "BX795") %>%
   arrange(Date) %>%
   mutate(
     Target = fct_inorder(Target), 
@@ -705,7 +705,7 @@ pltBarHASMCDoseBX
 pltTbl <- data.frame(
   sample = vtSample, 
   "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
-  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  "BX795 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 1, format = "fg", flag = "#") %>%
   str_replace("\\.$", ""), 
   check.names = FALSE
@@ -770,7 +770,7 @@ dfBlot <- data.frame(
 vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 2, format = "fg", flag = "#") %>%
   str_replace("\\.$", "")
-vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste("BX795", vtSample, "uM")
 vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
 
 imgCropped <- pmap_chr(dfBlot, cropBlot)
@@ -971,7 +971,7 @@ pltC <- (pltBlotRASMCDoseMRT / pltBarRASMCDoseMRT / pltTblRASMCDoseMRT) + plot_l
 show(pltC)
 ```
 
-# **Panel D: BX765 on RASMC**
+# **Panel D: BX795 on RASMC**
 
 Letter paper size: 8.5 in * 11 in
 Plos One figure size: width 2.63 in - 7.5 in; single column figure width <= 5.2 in; height <= 8.75
@@ -990,9 +990,9 @@ dfBlot <- data.frame(
   mutate(
     target = factor(target, levels = target), 
     imgPath = c(
-      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_CYB5R4_GFP.tif"), 
-      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_CYB5R4_GFP.tif"), 
-      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX765_0-20uM/20230529_aTub.tif")),
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230529_CYB5R4_GFP.tif"), 
+      glue("{root_dir}/20230529_RASMC_pCIGX-R4_OE0.4ug_12well_BX795_0-20uM/20230529_aTub.tif")),
     x = c(0.1, 0.1, 0.1), 
     y = c(0.33, 0.67, 0.75), 
     width = c(0.85, 0.85, 0.85), 
@@ -1003,7 +1003,7 @@ dfBlot <- data.frame(
 vtSample <- c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 2, format = "fg", flag = "#") %>%
   str_replace("\\.$", "")
-vtSample <- paste("BX765", vtSample, "uM")
+vtSample <- paste("BX795", vtSample, "uM")
 vtSample <- paste(vtSample, "+", c("Vehicle", rep("pCIGX-CYB5R4", times = 11)))
 
 imgCropped <- pmap_chr(dfBlot, cropBlot)
@@ -1059,7 +1059,7 @@ file.list <- file.list[grepl("0-20uM|dilution", file.list)]
 file.list <- file.list[grepl("RASMC", file.list)]
 
 dfData <- map_dfr(file.list, read.xlsx) %>%
-  filter(Inhibitor.Name == "BX765") %>%
+  filter(Inhibitor.Name == "BX795") %>%
   arrange(Date) %>%
   mutate(
     Target = fct_inorder(Target), 
@@ -1079,7 +1079,6 @@ dfData <- map_dfr(file.list, read.xlsx) %>%
     Value = Signal.Norm / Signal.Norm[Lane == 2]
   )
 
-vtGroup <- unique(df$Group)
 
 dfStat <- dfData %>%
   filter(Target != "a-Tubulin") %>%
@@ -1174,7 +1173,7 @@ pltBarRASMCDoseBX
 pltTbl <- data.frame(
   sample = vtSample, 
   "pCIGX-CYB5R4 (ug)" = c("0", rep("0.2", times = 11)), 
-  "BX765 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
+  "BX795 (uM)" = c(0, 0, 20*0.5^c(9:0)) %>%
   formatC(digits = 1, format = "fg", flag = "#") %>%
   str_replace("\\.$", ""), 
   check.names = FALSE
